@@ -9,13 +9,35 @@ An older CUDA/C++ version can be found [here](https://github.com/andyzeng/tsdf-f
 ## Requirements
 
 * Python 2.7+ with [NumPy](http://www.numpy.org/), [PyCUDA](https://developer.nvidia.com/pycuda), [OpenCV](https://docs.opencv.org/3.0-beta/doc/py_tutorials/py_tutorials.html), [Scikit-image](https://scikit-image.org/) and [Numba](https://numba.pydata.org/). These can be quickly installed/updated by running the following:
-  ```shell
-  pip install --user numpy opencv-python scikit-image numba
-  ```
+  * Using pip:
+    ```shell
+    pip install --user numpy opencv-python scikit-image numba
+    ```
+  * Using anaconda
+    ```shell
+    conda install numpy scikit-image numba
+    conda install opencv -c conda-forge
+    ```
 * [Optional] GPU acceleration requires an NVIDA GPU with [CUDA](https://developer.nvidia.com/cuda-downloads) and [PyCUDA](https://developer.nvidia.com/pycuda):
-  ```shell
-  pip install --user pycuda
-  ```
+  * Using pip:
+    ```shell
+    pip install --user pycuda
+    ```
+  * Using anaconda:
+    ```shell
+    conda install pycuda -c conda-forge
+    ```
+
+* [Optional] [OPENCL](https://www.khronos.org/opencl) acceleration and [PyOPENCL](https://documen.tician.de/pyopencl/):
+  * Using pip:
+    ```shell
+    pip install --user pyopencl
+    ```
+  * Using anaconda:
+    ```shell
+    conda install pyopencl -c conda-forge
+    ```
+    
 
 ## Demo
 
