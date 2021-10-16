@@ -12,8 +12,18 @@ try:
   FUSION_GPU_MODE = 1
 except Exception as err:
   print('Warning: {}'.format(err))
-  print('Failed to import PyCUDA. Running fusion in CPU mode.')
+  print('Failed to import PyCUDA.\n Running fusion in CPU mode using PyOPENCL.')
   FUSION_GPU_MODE = 0
+  try:
+    import pyopencl as ocl
+    FUSION_OPENCL = 1
+  except Exception as err:
+    print('Warning: {}'.format(err))
+    print('Failed to import PyCUDA and PyOPENCL. Running fusion in CPU mode.')
+    FUSION_OPENCL = 0
+
+
+
 
 
 class TSDFVolume:
@@ -53,6 +63,8 @@ class TSDFVolume:
     self._color_vol_cpu = np.zeros(self._vol_dim).astype(np.float32)
 
     self.gpu_mode = use_gpu and FUSION_GPU_MODE
+    #TODO Modify this condition
+    self.ocl_mode = FUSION_OPENCL
 
     # Copy voxel volumes to GPU
     if self.gpu_mode:
@@ -151,6 +163,107 @@ class TSDFVolume:
       self._max_gpu_grid_dim = np.array([grid_dim_x,grid_dim_y,grid_dim_z]).astype(int)
       self._n_gpu_loops = int(np.ceil(float(np.prod(self._vol_dim))/float(np.prod(self._max_gpu_grid_dim)*self._max_gpu_threads_per_block)))
 
+    elif self.ocl_mode:
+      platforms = ocl.get_platforms()
+      self._ctx = ocl.Context(dev_type=ocl.device_type.ALL,
+                             properties=[(ocl.context_properties.PLATFORM, platforms[1])])
+      ocl_device = platforms[1].get_devices()[0]
+      self._queue = ocl.CommandQueue(self._ctx)
+
+      mem_flags = ocl.mem_flags
+      self._tsdf_vol_ocl = ocl.Buffer(self._ctx, mem_flags.READ_WRITE | mem_flags.COPY_HOST_PTR,
+                                     hostbuf=self._tsdf_vol_cpu)
+      self._weight_vol_ocl = ocl.Buffer(self._ctx, mem_flags.READ_WRITE | mem_flags.COPY_HOST_PTR,
+                                       hostbuf=self._weight_vol_cpu)
+      self._color_vol_ocl = ocl.Buffer(self._ctx, mem_flags.READ_WRITE | mem_flags.COPY_HOST_PTR,
+                                      hostbuf=self._color_vol_cpu)
+      self._vol_dim_ocl = ocl.Buffer(self._ctx, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+                                     hostbuf=self._vol_dim)
+      self._vol_origin_ocl = ocl.Buffer(self._ctx, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+                                        hostbuf=self._vol_origin)
+
+      max_threads_per_block = ocl_device.max_work_group_size
+      n_blocks = int(np.ceil(float(np.prod(self._vol_dim)) / float(max_threads_per_block)))
+      work_items = ocl_device.max_work_item_sizes
+      grid_dim_x = min(work_items[0], int(np.floor(np.cbrt(n_blocks))))
+      grid_dim_y = min(work_items[1], int(np.floor(np.sqrt(n_blocks / grid_dim_x))))
+      grid_dim_z = min(work_items[1], int(np.ceil(float(n_blocks) / float(grid_dim_x * grid_dim_y))))
+      ocl_grid_dim = np.array([grid_dim_x, grid_dim_y, grid_dim_z])
+      self._n_gpu_loops = int(np.ceil(
+        float(np.prod(self._vol_dim)) / float(np.prod(ocl_grid_dim) * max_threads_per_block)))
+
+      self._ocl_src_mod = ocl.Program(self._ctx, """
+              __kernel void integrate(__global float * tsdf_vol,
+                                        __global float * weight_vol,
+                                        __global float * color_vol,
+                                        __global int * vol_dim,
+                                        __global float * vol_origin,
+                                        __global float * cam_intr,
+                                        __global float * cam_pose,
+                                        __global float * other_params,
+                                        __global float * color_im,
+                                        __global float * depth_im) {
+                // Get voxel index
+                float voxel_x = (float)get_global_id(0);
+                float voxel_y = (float)get_global_id(1);
+                float voxel_z = (float)get_global_id(2);
+                int vol_dim_x = (int) vol_dim[0];
+                int vol_dim_y = (int) vol_dim[1];
+                int vol_dim_z = (int) vol_dim[2];
+                int voxel_idx = (((int)voxel_x)*vol_dim_y*vol_dim_z) + (((int)voxel_y)*vol_dim_z) + ((int)voxel_z);
+                // Voxel grid coordinates to world coordinates
+                float voxel_size = other_params[1];
+                float pt_x = vol_origin[0]+voxel_x*voxel_size;
+                float pt_y = vol_origin[1]+voxel_y*voxel_size;
+                float pt_z = vol_origin[2]+voxel_z*voxel_size;
+                // World coordinates to camera coordinates
+                float tmp_pt_x = pt_x-cam_pose[0*4+3];
+                float tmp_pt_y = pt_y-cam_pose[1*4+3];
+                float tmp_pt_z = pt_z-cam_pose[2*4+3];
+                float cam_pt_x = cam_pose[0*4+0]*tmp_pt_x+cam_pose[1*4+0]*tmp_pt_y+cam_pose[2*4+0]*tmp_pt_z;
+                float cam_pt_y = cam_pose[0*4+1]*tmp_pt_x+cam_pose[1*4+1]*tmp_pt_y+cam_pose[2*4+1]*tmp_pt_z;
+                float cam_pt_z = cam_pose[0*4+2]*tmp_pt_x+cam_pose[1*4+2]*tmp_pt_y+cam_pose[2*4+2]*tmp_pt_z;
+                // Camera coordinates to image pixels
+                int pixel_x = (int) round(cam_intr[0*3+0]*(cam_pt_x/cam_pt_z)+cam_intr[0*3+2]);
+                int pixel_y = (int) round(cam_intr[1*3+1]*(cam_pt_y/cam_pt_z)+cam_intr[1*3+2]);
+                // Skip if outside view frustum
+                int im_h = (int) other_params[2];
+                int im_w = (int) other_params[3];
+                if (pixel_x < 0 || pixel_x >= im_w || pixel_y < 0 || pixel_y >= im_h || cam_pt_z<0)
+                    return;
+                // Skip invalid depth
+                float depth_value = depth_im[pixel_y*im_w+pixel_x];
+                if (depth_value == 0)
+                    return;
+                // Integrate TSDF
+                float trunc_margin = other_params[4];
+                float depth_diff = depth_value-cam_pt_z;
+                if (depth_diff < -trunc_margin)
+                    return;
+                float dist = fmin(1.0f,depth_diff/trunc_margin);
+                float w_old = weight_vol[voxel_idx];
+                float obs_weight = other_params[5];
+                float w_new = w_old + obs_weight;
+                weight_vol[voxel_idx] = w_new;
+                tsdf_vol[voxel_idx] = (tsdf_vol[voxel_idx]*w_old+obs_weight*dist)/w_new;
+                // Integrate color
+                float old_color = color_vol[voxel_idx];
+                float old_b = floor(old_color/(256*256));
+                float old_g = floor((old_color-old_b*256*256)/256);
+                float old_r = old_color-old_b*256*256-old_g*256;
+                float new_color = color_im[pixel_y*im_w+pixel_x];
+                float new_b = floor(new_color/(256*256));
+                float new_g = floor((new_color-new_b*256*256)/256);
+                float new_r = new_color-new_b*256*256-new_g*256;
+                new_b = min(round((old_b*w_old+obs_weight*new_b)/w_new),255.0f);
+                new_g = min(round((old_g*w_old+obs_weight*new_g)/w_new),255.0f);
+                new_r = min(round((old_r*w_old+obs_weight*new_r)/w_new),255.0f);
+                color_vol[voxel_idx] = new_b*256*256+new_g*256+new_r;
+                //printf("   x: %f, y: %f, z: %f, idx: %d, %f, %f, %f",voxel_x, voxel_y, voxel_z, voxel_idx, color_vol[voxel_idx], tsdf_vol[voxel_idx], weight_vol[voxel_idx]);
+                //color_vol[voxel_idx] = old_b*256*256+old_g*256+old_r;
+              }""").build()
+
+
     else:
       # Get voxel grid coordinates
       xv, yv, zv = np.meshgrid(
@@ -247,6 +360,31 @@ class TSDFVolume:
                               int(self._max_gpu_grid_dim[2]),
                             )
         )
+    elif self.ocl_mode:
+      mem_flags = ocl.mem_flags
+      cam_intr = cam_intr.reshape(-1).astype(np.float32)
+      cam_pose = cam_pose.reshape(-1).astype(np.float32)
+      params = np.asarray([0, self._voxel_size, im_h, im_w, self._trunc_margin, obs_weight], np.float32)
+      color_im = color_im.reshape(-1).astype(np.float32)
+      depth_im = depth_im.reshape(-1).astype(np.float32)
+      cam_intr_ocl = ocl.Buffer(self._ctx, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+                                     hostbuf=cam_intr)
+      cam_pose_ocl = ocl.Buffer(self._ctx, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+                                     hostbuf=cam_pose)
+      params_ocl = ocl.Buffer(self._ctx, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+                               hostbuf=params)
+      color_im_ocl = ocl.Buffer(self._ctx, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+                                 hostbuf=color_im)
+      depth_im_ocl = ocl.Buffer(self._ctx, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+                                 hostbuf=depth_im)
+      global_size = (self._vol_dim[0], self._vol_dim[1], self._vol_dim[2])
+
+      knl = self._ocl_src_mod.integrate
+
+      knl(self._queue, global_size, (1, 1, 1), self._tsdf_vol_ocl, self._weight_vol_ocl, self._color_vol_ocl,
+          self._vol_dim_ocl, self._vol_origin_ocl, cam_intr_ocl, cam_pose_ocl, params_ocl,
+          color_im_ocl, depth_im_ocl)
+
     else:  # CPU mode: integrate voxel volume (vectorized implementation)
       # Convert voxel grid coordinates to pixel coordinates
       cam_pts = self.vox2world(self._vol_origin, self.vox_coords, self._voxel_size)
@@ -296,6 +434,9 @@ class TSDFVolume:
     if self.gpu_mode:
       cuda.memcpy_dtoh(self._tsdf_vol_cpu, self._tsdf_vol_gpu)
       cuda.memcpy_dtoh(self._color_vol_cpu, self._color_vol_gpu)
+    elif self.ocl_mode:
+      ocl.enqueue_copy(self._queue, self._tsdf_vol_cpu, self._tsdf_vol_ocl)
+      ocl.enqueue_copy(self._queue, self._color_vol_cpu, self._color_vol_ocl)
     return self._tsdf_vol_cpu, self._color_vol_cpu
 
   def get_point_cloud(self):
