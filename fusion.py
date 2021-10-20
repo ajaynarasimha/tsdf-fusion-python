@@ -166,8 +166,8 @@ class TSDFVolume:
     elif self.ocl_mode:
       platforms = ocl.get_platforms()
       self._ctx = ocl.Context(dev_type=ocl.device_type.ALL,
-                             properties=[(ocl.context_properties.PLATFORM, platforms[1])])
-      ocl_device = platforms[1].get_devices()[0]
+                             properties=[(ocl.context_properties.PLATFORM, platforms[0])])
+      ocl_device = platforms[0].get_devices()[0]
       self._queue = ocl.CommandQueue(self._ctx)
 
       mem_flags = ocl.mem_flags
