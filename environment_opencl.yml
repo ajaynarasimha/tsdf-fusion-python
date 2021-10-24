@@ -1,0 +1,10 @@
+name: tsdf
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - numpy
+  - scikit-image
+  - numba
+  - opencv
+  - pyopencl
