@@ -9,36 +9,27 @@ An older CUDA/C++ version can be found [here](https://github.com/andyzeng/tsdf-f
 ## Requirements
 
 * Python 2.7+ with [NumPy](http://www.numpy.org/), [PyCUDA](https://developer.nvidia.com/pycuda), [OpenCV](https://docs.opencv.org/3.0-beta/doc/py_tutorials/py_tutorials.html), [Scikit-image](https://scikit-image.org/) and [Numba](https://numba.pydata.org/). These can be quickly installed/updated by running the following:
-  * Using pip:
-    ```shell
-    pip install --user numpy opencv-python scikit-image numba
-    ```
-  * Using anaconda
-    ```shell
-    conda install numpy scikit-image numba
-    conda install opencv -c conda-forge
-    ```
+  ```shell
+  pip install --user numpy opencv-python scikit-image numba
+  ```
 * [Optional] GPU acceleration requires an NVIDA GPU with [CUDA](https://developer.nvidia.com/cuda-downloads) and [PyCUDA](https://developer.nvidia.com/pycuda):
-  * Using pip:
-    ```shell
-    pip install --user pycuda
-    ```
-  * Using anaconda:
-    ```shell
-    conda install pycuda -c conda-forge
-    ```
-
+  ```shell
+  pip install --user pycuda
+  ```
 * [Optional] [OPENCL](https://www.khronos.org/opencl) acceleration and [PyOPENCL](https://documen.tician.de/pyopencl/):
-  * Using pip:
+  ```shell
+  pip install --user pyopencl
+  ```
+* Installation using Anaconda:
+  * OPENCL
     ```shell
-    pip install --user pyopencl
+    conda env create -f environment_opencl.yml
     ```
-  * Using anaconda:
+  * CUDA
     ```shell
-    conda install pyopencl -c conda-forge
+    conda env create -f environment_cuda.yml
     ```
     
-
 ## Demo
 
 This demo fuses 1000 RGB-D images from the 7-scenes dataset into a 405 x 264 x 289 projective TSDF voxel volume with 2cm resolution at about 30 FPS in GPU mode (0.4 FPS in CPU mode), and outputs a 3D mesh `mesh.ply` which can be visualized with a 3D viewer like [Meshlab](http://www.meshlab.net/).
