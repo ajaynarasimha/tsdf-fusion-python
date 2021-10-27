@@ -32,7 +32,7 @@ An older CUDA/C++ version can be found [here](https://github.com/andyzeng/tsdf-f
     
 ## Demo
 
-This demo fuses 1000 RGB-D images from the 7-scenes dataset into a 405 x 264 x 289 projective TSDF voxel volume with 2cm resolution at about 30 FPS in GPU mode (0.4 FPS in CPU mode), and outputs a 3D mesh `mesh.ply` which can be visualized with a 3D viewer like [Meshlab](http://www.meshlab.net/).
+This demo fuses 1000 RGB-D images from the 7-scenes dataset into a 405 x 264 x 289 projective TSDF voxel volume with 2cm resolution at about 30 FPS in GPU mode (40 FPS using OPENCL), and outputs a 3D mesh `mesh.ply` which can be visualized with a 3D viewer like [Meshlab](http://www.meshlab.net/).
 
 **Note**: color images are saved as 24-bit PNG RGB, depth images are saved as 16-bit PNG in millimeters.
 
