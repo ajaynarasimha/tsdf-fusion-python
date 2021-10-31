@@ -2,7 +2,9 @@
 
 <img src="images/fusion-movie.gif" height=250px align="right"/>
 
-This is a lightweight python script that fuses multiple registered color and depth images into a projective truncated signed distance function (TSDF) volume, which can then be used to create high quality 3D surface meshes and point clouds. Tested on Ubuntu 16.04.
+This is a lightweight python script that fuses multiple registered color and depth images into a projective truncated signed distance function (TSDF) volume, which can then be used to create high quality 3D surface meshes and point clouds. 
+
+OpenCL version tested on Windows 10 and Ubuntu 20.04
 
 An older CUDA/C++ version can be found [here](https://github.com/andyzeng/tsdf-fusion).
 
@@ -25,6 +27,7 @@ An older CUDA/C++ version can be found [here](https://github.com/andyzeng/tsdf-f
     ```shell
     conda env create -f environment_opencl.yml
     ```
+    Also install pocl, if you are running on Ubuntu.
   * CUDA
     ```shell
     conda env create -f environment_cuda.yml
